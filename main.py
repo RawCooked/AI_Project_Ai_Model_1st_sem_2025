@@ -6,121 +6,284 @@ from scipy.io.wavfile import write
 import sounddevice as sd
 from langchain_core.prompts import PromptTemplate
 from langchain_ollama import OllamaLLM
+from datetime import datetime
+import threading
+import queue
 
 # =========================
-# 0️⃣ CHECK AUDIO DEVICES
+# CONFIGURATION
 # =========================
-def list_audio_devices():
-    print("📱 Available audio devices:")
-    print(sd.query_devices())
-    print()
+class Config:
+    SAMPLE_RATE = 16000
+    SILENCE_THRESHOLD = 0.01  # Adjust based on your mic sensitivity
+    SILENCE_DURATION = 2.0    # Seconds of silence to stop recording
+    MAX_RECORDING_TIME = 30   # Maximum recording duration
+    WHISPER_MODEL = "tiny"    # "base" for better accuracy, "tiny" for speed
+    LLM_MODEL = "llama3.2:3b"
 
 # =========================
-# 1️⃣ RECORD AUDIO
+# CONVERSATION CONTEXT MANAGER
 # =========================
-def record_audio(filename="audio_input.wav", duration=6, samplerate=16000):
-    try:
-        # List devices first
-        devices = sd.query_devices()
-        default_input = sd.default.device[0]
+class ConversationManager:
+    def __init__(self, max_history=10):
+        self.history = []
+        self.max_history = max_history
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        print(f"🎤 Using input device: {devices[default_input]['name']}")
-        print("🎙️ Speak now...")
+    def add_message(self, role, content):
+        """Add a message to conversation history"""
+        self.history.append({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat()
+        })
         
-        recording = sd.rec(
-            int(duration * samplerate), 
-            samplerate=samplerate, 
-            channels=1, 
-            dtype='float32',
-            device=default_input
-        )
-        sd.wait()
+        # Keep only recent messages
+        if len(self.history) > self.max_history * 2:  # *2 for user+assistant pairs
+            self.history = self.history[-self.max_history * 2:]
+    
+    def get_context(self):
+        """Format conversation history for the prompt"""
+        if not self.history:
+            return "This is the start of the conversation."
         
-        audio_data = np.int16(recording * 32767)
-        write(filename, samplerate, audio_data)
-        print("✅ Recording saved:", filename)
-        return filename
-        
-    except Exception as e:
-        print(f"❌ Audio recording error: {e}")
-        print("\n💡 Troubleshooting:")
-        print("1. Make sure your microphone is connected")
-        print("2. Check Windows Sound Settings > Input")
-        print("3. Try running: sd.query_devices() to see available devices")
-        raise
+        context = "Previous conversation:\n"
+        for msg in self.history[-6:]:  # Last 3 exchanges
+            role = "User" if msg["role"] == "user" else "Assistant"
+            context += f"{role}: {msg['content']}\n"
+        return context
+    
+    def save_session(self):
+        """Save conversation to file"""
+        filename = f"conversation_{self.session_id}.json"
+        with open(filename, 'w') as f:
+            json.dump(self.history, f, indent=2)
+        print(f"💾 Conversation saved to {filename}")
 
 # =========================
-# 2️⃣ SPEECH → TEXT (Whisper)
+# VOICE ACTIVITY DETECTION
 # =========================
-def transcribe_audio(filename):
+class VoiceActivityDetector:
+    def __init__(self, sample_rate=16000, silence_threshold=0.01, silence_duration=2.0):
+        self.sample_rate = sample_rate
+        self.silence_threshold = silence_threshold
+        self.silence_duration = silence_duration
+        self.audio_queue = queue.Queue()
+        self.is_recording = False
+        
+    def audio_callback(self, indata, frames, time, status):
+        """Called for each audio block during recording"""
+        if status:
+            print(status)
+        self.audio_queue.put(indata.copy())
+    
+    def calculate_energy(self, audio_chunk):
+        """Calculate audio energy (volume)"""
+        return np.sqrt(np.mean(audio_chunk**2))
+    
+    def record_until_silence(self, max_duration=30):
+        """Record audio until silence is detected"""
+        print("🎤 Listening... (speak now)")
+        
+        recorded_chunks = []
+        silence_chunks = 0
+        silence_threshold_chunks = int(self.silence_duration * self.sample_rate / 1024)
+        
+        with sd.InputStream(samplerate=self.sample_rate, 
+                          channels=1, 
+                          callback=self.audio_callback,
+                          blocksize=1024):
+            
+            start_time = datetime.now()
+            speech_detected = False
+            
+            while True:
+                # Check max duration
+                if (datetime.now() - start_time).total_seconds() > max_duration:
+                    print("⏱️ Max recording time reached")
+                    break
+                
+                # Get audio chunk
+                try:
+                    chunk = self.audio_queue.get(timeout=0.1)
+                    recorded_chunks.append(chunk)
+                    
+                    # Calculate energy
+                    energy = self.calculate_energy(chunk)
+                    
+                    # Detect speech
+                    if energy > self.silence_threshold:
+                        silence_chunks = 0
+                        if not speech_detected:
+                            print("🗣️ Speech detected...")
+                            speech_detected = True
+                    else:
+                        if speech_detected:  # Only count silence after speech
+                            silence_chunks += 1
+                    
+                    # Stop if silence detected after speech
+                    if speech_detected and silence_chunks > silence_threshold_chunks:
+                        print("🤫 Silence detected, processing...")
+                        break
+                        
+                except queue.Empty:
+                    continue
+        
+        if not recorded_chunks:
+            return None
+        
+        # Combine all chunks
+        audio_data = np.concatenate(recorded_chunks, axis=0)
+        return audio_data
+
+# =========================
+# AUDIO PROCESSING
+# =========================
+def save_audio(audio_data, filename="temp_audio.wav", sample_rate=16000):
+    """Save audio data to WAV file"""
+    audio_int16 = np.int16(audio_data * 32767)
+    write(filename, sample_rate, audio_int16)
+    return filename
+
+def transcribe_audio(filename, model):
+    """Transcribe audio using Whisper"""
     print("🧠 Transcribing...")
-    model = whisper.load_model("tiny")  # "base" for better accuracy
     result = model.transcribe(filename)
-    text = result["text"]
-    print(f"🗣️ You said: {text}")
+    text = result["text"].strip()
     return text
 
 # =========================
-# 3️⃣ INITIALIZE LLM (Ollama)
+# LLM INTEGRATION
 # =========================
-llm = OllamaLLM(model="llama3.2:3b")  # Updated to new import
+class AIAssistant:
+    def __init__(self, model_name="llama3.2:3b"):
+        self.llm = OllamaLLM(model=model_name)
+        self.prompt_template = PromptTemplate.from_template("""
+You are a helpful AI assistant in a voice conversation.
+Be natural, conversational, and concise in your responses.
+Keep answers brief and to the point for voice interaction.
 
-prompt = PromptTemplate.from_template("""
-You are a patient and kind virtual teacher.
-Answer the user's question in a clear and structured way.
-If relevant, include short code examples or explanations.
-Keep it concise.
+{context}
 
-Return JSON only:
-{{
-"speech": "what you would say out loud",
-"graph_code": "optional python code (matplotlib), leave empty if none"
-}}
+Current user message: {question}
 
-User question: {question}
+Respond naturally as if speaking. Keep it under 3 sentences unless more detail is requested.
 """)
-
-# =========================
-# 4️⃣ PROCESS QUESTION
-# =========================
-def get_ai_response(question):
-    print("🤖 Thinking...")
-    formatted_prompt = prompt.format(question=question)
-    response = llm.invoke(formatted_prompt)
-    print("🧩 Raw response:", response)
-    try:
-        parsed = json.loads(response)
-    except:
-        parsed = {"speech": response, "graph_code": ""}
-    return parsed
-
-# =========================
-# 5️⃣ EXECUTE GRAPH CODE (optional)
-# =========================
-def execute_graph_code(code):
-    if code and len(code.strip()) > 0:
-        print("📊 Executing graph code...")
-        try:
-            exec(code)
-        except Exception as e:
-            print(f"❌ Error executing graph code: {e}")
-
-# =========================
-# 6️⃣ MAIN LOOP
-# =========================
-if __name__ == "__main__":
-    # First, list available audio devices
-    list_audio_devices()
     
-    try:
-        filename = record_audio(duration=7)
-        question = transcribe_audio(filename)
-        ai_reply = get_ai_response(question)
+    def get_response(self, question, context):
+        """Get AI response with context"""
+        print("🤖 Thinking...")
+        formatted_prompt = self.prompt_template.format(
+            context=context,
+            question=question
+        )
+        response = self.llm.invoke(formatted_prompt)
+        return response.strip()
 
-        print(f"\n🧠 AI says: {ai_reply['speech']}\n")
-        execute_graph_code(ai_reply.get("graph_code", ""))
+# =========================
+# MAIN CONVERSATION LOOP
+# =========================
+def main():
+    print("=" * 50)
+    print("🎙️  AI VOICE CONVERSATION SYSTEM")
+    print("=" * 50)
+    print("📋 Controls:")
+    print("   - Speak naturally, system will detect when you stop")
+    print("   - Press Ctrl+C to end conversation")
+    print("=" * 50)
+    print()
     
+    # Initialize components
+    whisper_model = whisper.load_model(Config.WHISPER_MODEL)
+    vad = VoiceActivityDetector(
+        sample_rate=Config.SAMPLE_RATE,
+        silence_threshold=Config.SILENCE_THRESHOLD,
+        silence_duration=Config.SILENCE_DURATION
+    )
+    conversation = ConversationManager(max_history=10)
+    assistant = AIAssistant(model_name=Config.LLM_MODEL)
+    
+    print("✅ System ready!\n")
+    
+    # Conversation loop
+    turn_number = 1
+    try:
+        while True:
+            print(f"\n{'─' * 50}")
+            print(f"Turn {turn_number}")
+            print(f"{'─' * 50}")
+            
+            # Record audio with voice activity detection
+            audio_data = vad.record_until_silence(max_duration=Config.MAX_RECORDING_TIME)
+            
+            if audio_data is None or len(audio_data) < Config.SAMPLE_RATE * 0.5:
+                print("⚠️ No speech detected, trying again...")
+                continue
+            
+            # Save and transcribe
+            audio_file = save_audio(audio_data, sample_rate=Config.SAMPLE_RATE)
+            user_text = transcribe_audio(audio_file, whisper_model)
+            
+            if not user_text or len(user_text.strip()) < 2:
+                print("⚠️ Could not understand, please try again...")
+                continue
+            
+            print(f"👤 You: {user_text}")
+            
+            # Add to conversation history
+            conversation.add_message("user", user_text)
+            
+            # Get AI response with context
+            context = conversation.get_context()
+            ai_response = assistant.get_response(user_text, context)
+            
+            # Add AI response to history
+            conversation.add_message("assistant", ai_response)
+            
+            print(f"🤖 AI: {ai_response}")
+            
+            # TODO: Add text-to-speech here if desired
+            # speak(ai_response)
+            
+            turn_number += 1
+            
     except KeyboardInterrupt:
-        print("\n\n👋 Exiting...")
+        print("\n\n👋 Ending conversation...")
+        conversation.save_session()
+        print("Goodbye!")
     except Exception as e:
         print(f"\n❌ Error: {e}")
+        conversation.save_session()
+
+# =========================
+# FUTURE ENHANCEMENTS PLACEHOLDER
+# =========================
+"""
+🔮 FUTURE FEATURES TO ADD:
+
+1. RAG System:
+   - Add vector database (ChromaDB, FAISS)
+   - Document ingestion pipeline
+   - Semantic search for context retrieval
+   
+2. MCP Server Integration:
+   - Tool calling framework
+   - Function definitions for LLM
+   - Execution sandboxing
+   
+3. Text-to-Speech:
+   - Add TTS engine (pyttsx3, edge-tts, or ElevenLabs)
+   - Natural voice output
+   
+4. Multi-language Support:
+   - Language detection
+   - Multilingual Whisper models
+   
+5. Memory System:
+   - Long-term memory storage
+   - User preferences
+   - Conversation summaries
+"""
+
+if __name__ == "__main__":
+    main()
