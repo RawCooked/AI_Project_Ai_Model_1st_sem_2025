@@ -1,0 +1,9 @@
+langchain
+langchain-community
+langchain-core
+ollama
+openai-whisper
+sounddevice
+numpy
+scipy
+matplotlib
