@@ -1,9 +1,27 @@
-langchain
-langchain-community
-langchain-core
-ollama
-openai-whisper
-sounddevice
+# Core Dependencies
 numpy
 scipy
-matplotlib
+
+# Audio Processing
+sounddevice
+openai-whisper
+
+# OpenAI Client
+openai
+httpx
+
+# LangChain Framework
+langchain
+langchain-core
+langchain-openai
+langchain-community
+
+# Environment Variables
+python-dotenv
+
+# Tool Dependencies
+requests
+wikipedia
+
+# Optional: For better audio quality
+# pyaudio>=0.2.13  # Alternative to sounddevice

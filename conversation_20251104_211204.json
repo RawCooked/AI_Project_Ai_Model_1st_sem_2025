@@ -1,0 +1,12 @@
+{
+  "session_id": "20251104_211204",
+  "history": [
+    {
+      "user": "So, what is 1 plus 1?",
+      "assistant": "That's a simple one. The answer is 2.",
+      "timestamp": "2025-11-04T21:12:11.679575"
+    }
+  ],
+  "tool_calls": [],
+  "total_turns": 1
+}
