@@ -26,8 +26,8 @@ class Config:
     
     # School LLM API Configuration
     ESPRIT_API_KEY = os.getenv("ESPRIT_API_KEY")
-    ESPRIT_BASE_URL = os.getenv("ESPRIT_BASE_URL", "https://tokenfactory.esprit.tn/api")
-    LLM_MODEL = "hosted_vllm/Llama-3.1-70B-Instruct"
+    ESPRIT_BASE_URL = os.getenv("ESPRIT_BASE_URL", "https://tokenfactory.esprit.tn/api/v1")
+    LLM_MODEL = os.getenv("LLM_MODEL", "hosted_vllm/Llama-3.1-70B-Instruct")
 
 # =========================
 # TOOL IMPLEMENTATIONS
@@ -42,28 +42,53 @@ def register_tool(func):
 
 @register_tool
 def search_web(query: str) -> str:
-    """Search the web for information using DuckDuckGo"""
+    """Search the web for current information using multiple methods"""
     try:
         import requests
-        url = f"https://api.duckduckgo.com/?q={query}&format=json"
-        response = requests.get(url, timeout=5)
-        data = response.json()
+        from bs4 import BeautifulSoup
         
-        abstract = data.get('AbstractText', '')
-        related = data.get('RelatedTopics', [])
+        # Try DuckDuckGo HTML scraping (more reliable than API)
+        search_url = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
         
-        result = []
-        if abstract:
-            result.append(f"Summary: {abstract}")
+        response = requests.get(search_url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        if related:
-            for item in related[:3]:
-                if isinstance(item, dict) and 'Text' in item:
-                    result.append(f"- {item['Text']}")
+        results = []
+        # Get search result snippets
+        for result in soup.find_all('a', class_='result__snippet', limit=3):
+            text = result.get_text(strip=True)
+            if text and len(text) > 20:
+                results.append(f"• {text}")
         
-        return "\n".join(result) if result else "No relevant results found for this query."
+        if results:
+            return f"Search results for '{query}':\n\n" + "\n\n".join(results)
+        
+        # Fallback: Try Wikipedia search
+        wiki_result = search_wikipedia_quick(query)
+        if wiki_result and "not found" not in wiki_result.lower():
+            return wiki_result
+        
+        return f"I found limited information for '{query}'. Try rephrasing or asking about a specific aspect."
+        
     except Exception as e:
-        return f"Search error: {str(e)}"
+        return f"Search temporarily unavailable. Try asking me to search Wikipedia instead, or rephrase your question."
+
+def search_wikipedia_quick(query: str) -> str:
+    """Quick Wikipedia search helper"""
+    try:
+        import wikipedia
+        wikipedia.set_lang("en")
+        results = wikipedia.search(query, results=1)
+        if results:
+            page = wikipedia.page(results[0], auto_suggest=False)
+            summary = wikipedia.summary(results[0], sentences=3, auto_suggest=False)
+            return f"{page.title}: {summary}"
+        return "No results found"
+    except:
+        return "No results found"
 
 @register_tool
 def get_wikipedia_info(topic: str) -> str:
@@ -71,15 +96,31 @@ def get_wikipedia_info(topic: str) -> str:
     try:
         import wikipedia
         wikipedia.set_lang("en")
-        summary = wikipedia.summary(topic, sentences=4, auto_suggest=True)
-        page = wikipedia.page(topic, auto_suggest=True)
         
-        result = f"Wikipedia - {page.title}:\n\n{summary}\n\nURL: {page.url}"
-        return result
+        # First try exact match
+        try:
+            summary = wikipedia.summary(topic, sentences=4, auto_suggest=False)
+            page = wikipedia.page(topic, auto_suggest=False)
+            return f"Wikipedia - {page.title}:\n\n{summary}\n\nURL: {page.url}"
+        except wikipedia.exceptions.PageError:
+            # Try with auto-suggest
+            summary = wikipedia.summary(topic, sentences=4, auto_suggest=True)
+            page = wikipedia.page(topic, auto_suggest=True)
+            return f"Wikipedia - {page.title}:\n\n{summary}\n\nURL: {page.url}"
+            
     except wikipedia.exceptions.DisambiguationError as e:
-        return f"Multiple topics found. Please be more specific. Options: {', '.join(e.options[:5])}"
+        # Show options for disambiguation
+        options = ', '.join(e.options[:5])
+        return f"Multiple topics found. Please be more specific. Options: {options}"
     except wikipedia.exceptions.PageError:
-        return f"No Wikipedia page found for '{topic}'"
+        # Try searching instead
+        try:
+            results = wikipedia.search(topic, results=3)
+            if results:
+                return f"No exact match found. Did you mean: {', '.join(results)}? Please specify which one."
+            return f"No Wikipedia page found for '{topic}'"
+        except:
+            return f"No Wikipedia page found for '{topic}'"
     except Exception as e:
         return f"Wikipedia error: {str(e)}"
 
@@ -308,15 +349,34 @@ Available tools:
 
 When you need to use a tool, respond EXACTLY in this format:
 TOOL: tool_name
-ARGS: argument1, argument2, ...
+ARGS: single_argument_or_query
 
-For example:
-- To search: TOOL: search_web\nARGS: artificial intelligence news
-- To calculate: TOOL: calculate\nARGS: 25 * 17 + 100
-- To get time: TOOL: get_current_datetime\nARGS: 
+IMPORTANT RULES:
+- search_web: Use for current info, news, facts. ARGS should be a search query (e.g., "world population 2025")
+- get_wikipedia_info: Use for encyclopedic info. ARGS should be a topic name (e.g., "Adolf Hitler" or "Quantum computing")
+- calculate: ARGS should be a math expression (e.g., "25 * 17 + 100")
+- get_current_datetime: No ARGS needed (leave blank)
+- create_note: ARGS should be "title, content" (comma-separated)
+- save_to_file: ARGS should be the content to save
+
+Examples:
+User: "What time is it?"
+TOOL: get_current_datetime
+ARGS: 
+
+User: "Tell me about Einstein"
+TOOL: get_wikipedia_info
+ARGS: Albert Einstein
+
+User: "How many people are in the world?"
+TOOL: search_web
+ARGS: world population 2025
+
+User: "Calculate 50 times 100"
+TOOL: calculate
+ARGS: 50 * 100
 
 After using a tool, you'll receive the result and can provide a natural response.
-
 If you don't need a tool, just respond naturally to the user."""
     
     def parse_tool_call(self, response: str) -> Optional[tuple]:
@@ -347,16 +407,26 @@ If you don't need a tool, just respond naturally to the user."""
             # Parse arguments
             if not args or args.strip() == "":
                 result = tool_func()
-            elif ',' in args:
-                # Multiple arguments
-                arg_list = [arg.strip() for arg in args.split(',')]
-                result = tool_func(*arg_list)
             else:
-                # Single argument
-                result = tool_func(args.strip())
+                # Check function signature to see how many arguments it expects
+                import inspect
+                sig = inspect.signature(tool_func)
+                param_count = len(sig.parameters)
+                
+                if param_count == 0:
+                    result = tool_func()
+                elif param_count == 1:
+                    # Single argument - pass the whole string
+                    result = tool_func(args.strip())
+                else:
+                    # Multiple arguments - split by comma
+                    arg_list = [arg.strip() for arg in args.split(',')]
+                    result = tool_func(*arg_list)
             
             return result
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return f"Error executing tool: {str(e)}"
     
     def process_query(self, user_query: str, conversation: ConversationManager) -> tuple:
