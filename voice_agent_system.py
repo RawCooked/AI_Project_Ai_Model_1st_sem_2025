@@ -42,22 +42,18 @@ def register_tool(func):
 
 @register_tool
 def search_web(query: str) -> str:
-    """Search the web for current information using multiple methods"""
+    """Search the web for current information"""
     try:
         import requests
         from bs4 import BeautifulSoup
         
-        # Try DuckDuckGo HTML scraping (more reliable than API)
         search_url = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         
         response = requests.get(search_url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
         results = []
-        # Get search result snippets
         for result in soup.find_all('a', class_='result__snippet', limit=3):
             text = result.get_text(strip=True)
             if text and len(text) > 20:
@@ -66,61 +62,19 @@ def search_web(query: str) -> str:
         if results:
             return f"Search results for '{query}':\n\n" + "\n\n".join(results)
         
-        # Fallback: Try Wikipedia search
-        wiki_result = search_wikipedia_quick(query)
-        if wiki_result and "not found" not in wiki_result.lower():
-            return wiki_result
-        
-        return f"I found limited information for '{query}'. Try rephrasing or asking about a specific aspect."
-        
+        return f"Limited information found for '{query}'. Try rephrasing."
     except Exception as e:
-        return f"Search temporarily unavailable. Try asking me to search Wikipedia instead, or rephrase your question."
-
-def search_wikipedia_quick(query: str) -> str:
-    """Quick Wikipedia search helper"""
-    try:
-        import wikipedia
-        wikipedia.set_lang("en")
-        results = wikipedia.search(query, results=1)
-        if results:
-            page = wikipedia.page(results[0], auto_suggest=False)
-            summary = wikipedia.summary(results[0], sentences=3, auto_suggest=False)
-            return f"{page.title}: {summary}"
-        return "No results found"
-    except:
-        return "No results found"
+        return f"Search unavailable. Error: {str(e)}"
 
 @register_tool
 def get_wikipedia_info(topic: str) -> str:
-    """Get detailed information from Wikipedia about a topic"""
+    """Get detailed information from Wikipedia"""
     try:
         import wikipedia
         wikipedia.set_lang("en")
-        
-        # First try exact match
-        try:
-            summary = wikipedia.summary(topic, sentences=4, auto_suggest=False)
-            page = wikipedia.page(topic, auto_suggest=False)
-            return f"Wikipedia - {page.title}:\n\n{summary}\n\nURL: {page.url}"
-        except wikipedia.exceptions.PageError:
-            # Try with auto-suggest
-            summary = wikipedia.summary(topic, sentences=4, auto_suggest=True)
-            page = wikipedia.page(topic, auto_suggest=True)
-            return f"Wikipedia - {page.title}:\n\n{summary}\n\nURL: {page.url}"
-            
-    except wikipedia.exceptions.DisambiguationError as e:
-        # Show options for disambiguation
-        options = ', '.join(e.options[:5])
-        return f"Multiple topics found. Please be more specific. Options: {options}"
-    except wikipedia.exceptions.PageError:
-        # Try searching instead
-        try:
-            results = wikipedia.search(topic, results=3)
-            if results:
-                return f"No exact match found. Did you mean: {', '.join(results)}? Please specify which one."
-            return f"No Wikipedia page found for '{topic}'"
-        except:
-            return f"No Wikipedia page found for '{topic}'"
+        summary = wikipedia.summary(topic, sentences=4, auto_suggest=True)
+        page = wikipedia.page(topic, auto_suggest=True)
+        return f"Wikipedia - {page.title}:\n\n{summary}\n\nURL: {page.url}"
     except Exception as e:
         return f"Wikipedia error: {str(e)}"
 
@@ -130,17 +84,13 @@ def save_to_file(content: str, filename: str = None) -> str:
     try:
         if filename is None:
             filename = f"output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        
         if not filename.endswith('.txt'):
             filename += '.txt'
-        
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(content)
-        
-        abs_path = os.path.abspath(filename)
-        return f"✅ Content successfully saved to: {abs_path}"
+        return f"✅ Saved to: {os.path.abspath(filename)}"
     except Exception as e:
-        return f"Save error: {str(e)}"
+        return f"Error: {str(e)}"
 
 @register_tool
 def calculate(expression: str) -> str:
@@ -148,48 +98,247 @@ def calculate(expression: str) -> str:
     try:
         allowed_chars = set('0123456789+-*/(). ')
         if not all(c in allowed_chars for c in expression):
-            return "Invalid characters in expression. Only numbers and basic operators (+, -, *, /, parentheses) are allowed."
-        
+            return "Invalid characters in expression"
         result = eval(expression, {"__builtins__": {}}, {})
-        return f"Calculation result: {expression} = {result}"
-    except ZeroDivisionError:
-        return "Error: Division by zero"
+        return f"Result: {expression} = {result}"
     except Exception as e:
-        return f"Calculation error: {str(e)}"
+        return f"Error: {str(e)}"
 
 @register_tool
 def get_current_datetime() -> str:
-    """Get the current date and time"""
+    """Get current date and time"""
     now = datetime.now()
-    date_str = now.strftime("%A, %B %d, %Y")
-    time_str = now.strftime("%I:%M:%S %p")
-    return f"Current date: {date_str}\nCurrent time: {time_str}"
+    return f"Date: {now.strftime('%A, %B %d, %Y')}\nTime: {now.strftime('%I:%M:%S %p')}"
 
 @register_tool
 def create_note(title: str, content: str) -> str:
-    """Create a quick note with a title"""
+    """Create a quick note"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"note_{timestamp}_{title.replace(' ', '_')}.txt"
-        
         full_content = f"Title: {title}\nCreated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n{content}"
-        
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(full_content)
-        
         return f"✅ Note '{title}' saved to {filename}"
     except Exception as e:
-        return f"Error creating note: {str(e)}"
+        return f"Error: {str(e)}"
 
 # =========================
-# TOOLS DESCRIPTION FOR LLM
+# PRESCRIPTION TOOLS
+# =========================
+
+@register_tool
+def create_prescription(patient_info: str, medications: str, diagnosis: str = "", notes: str = "") -> str:
+    """Create medical prescription PDF. Format: patient_info, medications, diagnosis, notes"""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+        
+        # Parse patient info
+        patient_parts = [p.strip() for p in patient_info.split(',')]
+        patient_name = patient_parts[0] if len(patient_parts) > 0 else "Patient"
+        patient_age = patient_parts[1] if len(patient_parts) > 1 else "N/A"
+        patient_gender = patient_parts[2] if len(patient_parts) > 2 else "N/A"
+        
+        # Parse medications
+        med_list = []
+        if medications:
+            for med in medications.split(';'):
+                med = med.strip()
+                if med:
+                    parts = med.split(':')
+                    med_list.append({
+                        'name': parts[0].strip() if len(parts) > 0 else '',
+                        'dosage': parts[1].strip() if len(parts) > 1 else '',
+                        'frequency': parts[2].strip() if len(parts) > 2 else '',
+                        'duration': parts[3].strip() if len(parts) > 3 else ''
+                    })
+        
+        # Generate filename - clean the patient name
+        clean_name = patient_name.replace(' ', '_').replace('"', '').replace("'", '')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"prescription_{clean_name}_{timestamp}.pdf"
+        
+        # Create PDF
+        doc = SimpleDocTemplate(filename, pagesize=letter,
+                              rightMargin=0.75*inch, leftMargin=0.75*inch,
+                              topMargin=0.75*inch, bottomMargin=0.75*inch)
+        
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'],
+            fontSize=24, textColor=colors.HexColor('#1a5490'), spaceAfter=30,
+            alignment=TA_CENTER, fontName='Helvetica-Bold')
+        
+        heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'],
+            fontSize=14, textColor=colors.HexColor('#2c5aa0'), spaceAfter=12,
+            spaceBefore=12, fontName='Helvetica-Bold')
+        
+        normal_style = ParagraphStyle('CustomNormal', parent=styles['Normal'],
+            fontSize=11, spaceAfter=6)
+        
+        # Header
+        elements.append(Paragraph("℞ MEDICAL PRESCRIPTION", title_style))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Doctor info
+        doctor_data = [
+            ['Dr. AI Medical Assistant', ''],
+            ['Medical AI System', 'Date: ' + datetime.now().strftime("%B %d, %Y")],
+            ['License: AI-ASSISTANT-001', 'Time: ' + datetime.now().strftime("%I:%M %p")]
+        ]
+        
+        doctor_table = Table(doctor_data, colWidths=[3.5*inch, 3*inch])
+        doctor_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ]))
+        elements.append(doctor_table)
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Patient Information
+        elements.append(Paragraph("PATIENT INFORMATION", heading_style))
+        
+        patient_data = [
+            ['Name:', patient_name, 'Age:', patient_age],
+            ['Gender:', patient_gender, 'Date:', datetime.now().strftime("%m/%d/%Y")]
+        ]
+        
+        patient_table = Table(patient_data, colWidths=[1*inch, 2.5*inch, 0.8*inch, 2.2*inch])
+        patient_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8f9fa')),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+        ]))
+        elements.append(patient_table)
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Diagnosis
+        if diagnosis:
+            elements.append(Paragraph("DIAGNOSIS", heading_style))
+            elements.append(Paragraph(diagnosis, normal_style))
+            elements.append(Spacer(1, 0.15*inch))
+        
+        # Medications
+        elements.append(Paragraph("PRESCRIPTION", heading_style))
+        
+        if med_list:
+            med_data = [['#', 'Medication', 'Dosage', 'Frequency', 'Duration']]
+            for idx, med in enumerate(med_list, 1):
+                med_data.append([str(idx), med['name'], med['dosage'], 
+                               med['frequency'], med['duration']])
+            
+            med_table = Table(med_data, colWidths=[0.4*inch, 2.2*inch, 1.3*inch, 1.5*inch, 1.1*inch])
+            med_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5aa0')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dee2e6')),
+            ]))
+            elements.append(med_table)
+        
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Notes
+        if notes:
+            elements.append(Paragraph("INSTRUCTIONS & NOTES", heading_style))
+            elements.append(Paragraph(notes, normal_style))
+            elements.append(Spacer(1, 0.2*inch))
+        
+        # Disclaimer
+        elements.append(Spacer(1, 0.3*inch))
+        disclaimer_style = ParagraphStyle('Disclaimer', parent=styles['Normal'],
+            fontSize=8, textColor=colors.HexColor('#666666'), alignment=TA_CENTER)
+        
+        elements.append(Paragraph(
+            "⚠️ AI-generated prescription for informational purposes only. Consult a licensed healthcare professional.",
+            disclaimer_style))
+        
+        # Signature
+        elements.append(Spacer(1, 0.4*inch))
+        sig_style = ParagraphStyle('Signature', parent=styles['Normal'], 
+            fontSize=10, alignment=TA_RIGHT)
+        elements.append(Paragraph("_____________________________", sig_style))
+        elements.append(Paragraph("AI Medical Assistant", sig_style))
+        
+        doc.build(elements)
+        
+        return f"✅ Prescription created!\n📄 {os.path.abspath(filename)}\n👤 {patient_name}\n💊 {len(med_list)} medications"
+        
+    except ImportError:
+        return "❌ Install reportlab: pip install reportlab"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+@register_tool
+def quick_prescription(patient_name: str, condition: str) -> str:
+    """Quick prescription for common conditions. Example: patient_name, condition"""
+    try:
+        prescriptions = {
+            'common cold': ('Acetaminophen:500mg:Every 6 hours:5 days; Vitamin C:1000mg:Once daily:7 days',
+                          'Rest, drink 8-10 glasses fluids daily. Return if fever >102°F.'),
+            'flu': ('Oseltamivir:75mg:Twice daily:5 days; Acetaminophen:500mg:Every 6 hours:7 days',
+                   'Isolation 5 days. Rest and fluids. Return if breathing difficulties.'),
+            'headache': ('Ibuprofen:400mg:Every 8 hours as needed:3 days',
+                        'Avoid bright lights. Stay hydrated.'),
+            'fever': ('Acetaminophen:500mg:Every 6 hours:5 days',
+                     'Monitor temp every 4 hours. Return if >103°F.'),
+            'cough': ('Dextromethorphan:10ml:Every 6 hours:5 days; Ambroxol:30mg:3x daily:7 days',
+                     'Stay hydrated. Use humidifier. Avoid smoking.'),
+            'sore throat': ('Amoxicillin:500mg:3x daily:7 days; Throat lozenges:As needed:Every 3-4h:7 days',
+                           'Warm salt water gargles. Complete antibiotic course.'),
+            'allergies': ('Cetirizine:10mg:Once daily:14 days; Nasal spray:2 sprays:Once daily:14 days',
+                         'Avoid allergens. May cause drowsiness.'),
+            'back pain': ('Ibuprofen:600mg:3x daily with food:7 days; Muscle relaxant:10mg:Bedtime:5 days',
+                         'Hot/cold packs. Gentle stretching. Avoid heavy lifting.'),
+            'stomach pain': ('Omeprazole:20mg:Before breakfast:14 days; Antacid:As directed:As needed:14 days',
+                            'Small frequent meals. Avoid spicy/fatty foods.'),
+        }
+        
+        condition_lower = condition.lower().strip()
+        matched = None
+        
+        for key in prescriptions:
+            if key in condition_lower or condition_lower in key:
+                matched = key
+                break
+        
+        if matched:
+            meds, notes = prescriptions[matched]
+            diagnosis = matched.title()
+        else:
+            meds = "General medication:As directed:As needed:7 days"
+            notes = "Follow instructions. Return if symptoms worsen."
+            diagnosis = condition.title()
+        
+        return create_prescription(f"{patient_name}, N/A, N/A", meds, diagnosis, notes)
+        
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+# =========================
+# TOOLS DESCRIPTION
 # =========================
 def get_tools_description():
-    """Generate tools description for the LLM"""
-    tools_desc = []
-    for name, func in TOOLS_DICT.items():
-        tools_desc.append(f"- {name}: {func.__doc__}")
-    return "\n".join(tools_desc)
+    """Generate tools description for LLM"""
+    return "\n".join([f"- {name}: {func.__doc__}" for name, func in TOOLS_DICT.items()])
 
 # =========================
 # CONVERSATION MANAGER
@@ -203,14 +352,11 @@ class ConversationManager:
         self.messages = []
         
     def add_message(self, role: str, content: str):
-        """Add a message to history"""
         self.messages.append({"role": role, "content": content})
-        # Keep only last max_history messages (plus system)
         if len(self.messages) > self.max_history * 2 + 1:
             self.messages = [self.messages[0]] + self.messages[-(self.max_history * 2):]
     
     def add_interaction(self, user_message: str, ai_response: str, tool_calls: List[str] = None):
-        """Add a complete interaction to history"""
         interaction = {
             "user": user_message,
             "assistant": ai_response,
@@ -218,11 +364,9 @@ class ConversationManager:
         }
         if tool_calls:
             interaction["tools_used"] = tool_calls
-        
         self.full_history.append(interaction)
     
     def add_tool_call(self, tool_name: str, parameters: str, result: str):
-        """Track tool usage"""
         self.tool_calls.append({
             "tool": tool_name,
             "parameters": parameters,
@@ -231,7 +375,6 @@ class ConversationManager:
         })
     
     def save_session(self):
-        """Save conversation and tool calls to file"""
         session_data = {
             "session_id": self.session_id,
             "history": self.full_history,
@@ -241,7 +384,7 @@ class ConversationManager:
         filename = f"conversation_{self.session_id}.json"
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(session_data, f, indent=2, ensure_ascii=False)
-        print(f"💾 Conversation saved to {filename}")
+        print(f"💾 Saved to {filename}")
 
 # =========================
 # VOICE ACTIVITY DETECTION
@@ -262,29 +405,25 @@ class VoiceActivityDetector:
         return np.sqrt(np.mean(audio_chunk**2))
     
     def record_until_silence(self, max_duration=30):
-        print("🎤 Listening... (speak now)")
+        print("🎤 Listening...")
         
         recorded_chunks = []
         silence_chunks = 0
         silence_threshold_chunks = int(self.silence_duration * self.sample_rate / 1024)
         
-        with sd.InputStream(samplerate=self.sample_rate, 
-                          channels=1, 
-                          callback=self.audio_callback,
-                          blocksize=1024):
-            
+        with sd.InputStream(samplerate=self.sample_rate, channels=1, 
+                          callback=self.audio_callback, blocksize=1024):
             start_time = datetime.now()
             speech_detected = False
             
             while True:
                 if (datetime.now() - start_time).total_seconds() > max_duration:
-                    print("⏱️ Max recording time reached")
+                    print("⏱️ Max time reached")
                     break
                 
                 try:
                     chunk = self.audio_queue.get(timeout=0.1)
                     recorded_chunks.append(chunk)
-                    
                     energy = self.calculate_energy(chunk)
                     
                     if energy > self.silence_threshold:
@@ -297,17 +436,14 @@ class VoiceActivityDetector:
                             silence_chunks += 1
                     
                     if speech_detected and silence_chunks > silence_threshold_chunks:
-                        print("🤫 Silence detected, processing...")
+                        print("🤫 Processing...")
                         break
-                        
                 except queue.Empty:
                     continue
         
         if not recorded_chunks:
             return None
-        
-        audio_data = np.concatenate(recorded_chunks, axis=0)
-        return audio_data
+        return np.concatenate(recorded_chunks, axis=0)
 
 # =========================
 # AUDIO PROCESSING
@@ -320,64 +456,52 @@ def save_audio(audio_data, filename="temp_audio.wav", sample_rate=16000):
 def transcribe_audio(filename, model):
     print("🧠 Transcribing...")
     result = model.transcribe(filename, language="en")
-    text = result["text"].strip()
-    return text
+    return result["text"].strip()
 
 # =========================
-# SIMPLE AI AGENT (NO LANGCHAIN)
+# AI AGENT
 # =========================
 class SimpleVoiceAgent:
     def __init__(self):
-        # Initialize OpenAI client with ESPRIT API
         http_client = httpx.Client(verify=False)
-        
         self.client = OpenAI(
             api_key=Config.ESPRIT_API_KEY,
             base_url=Config.ESPRIT_BASE_URL,
             http_client=http_client
         )
         
-        self.system_prompt = f"""You are a helpful AI voice assistant with access to various tools.
+        self.system_prompt = f"""You are a helpful AI voice assistant with tools.
 
-You are conversing through voice, so keep your responses:
-- Natural and conversational
-- Concise (2-3 sentences unless detail is requested)
-- Clear and easy to understand when spoken aloud
+Keep responses natural, conversational, concise (2-3 sentences unless detail requested).
 
 Available tools:
 {get_tools_description()}
 
-When you need to use a tool, respond EXACTLY in this format:
+When you need a tool, use this EXACT format:
 TOOL: tool_name
-ARGS: single_argument_or_query
+ARGS: arguments
 
-IMPORTANT RULES:
-- search_web: Use for current info, news, facts. ARGS should be a search query (e.g., "world population 2025")
-- get_wikipedia_info: Use for encyclopedic info. ARGS should be a topic name (e.g., "Adolf Hitler" or "Quantum computing")
-- calculate: ARGS should be a math expression (e.g., "25 * 17 + 100")
-- get_current_datetime: No ARGS needed (leave blank)
-- create_note: ARGS should be "title, content" (comma-separated)
-- save_to_file: ARGS should be the content to save
+TOOL GUIDE:
+- search_web: ARGS: "search query"
+- get_wikipedia_info: ARGS: "topic"
+- calculate: ARGS: "math expression"
+- get_current_datetime: ARGS: (leave blank)
+- create_note: ARGS: "title, content"
+- save_to_file: ARGS: "content"
+- create_prescription: ARGS: "Name Age Gender, Med:Dose:Freq:Days; Med2:..., Diagnosis, Notes"
+- quick_prescription: ARGS: "Patient Name, condition"
 
-Examples:
-User: "What time is it?"
-TOOL: get_current_datetime
-ARGS: 
+MEDICAL MODE - IMPORTANT NAME HANDLING:
+When a user mentions symptoms or requests a prescription:
+1. First check if you know their name from the conversation history
+2. If you know their name, use it: ARGS: "Their Actual Name, condition"
+3. If you DON'T know their name, ASK for it before creating prescription
+4. NEVER use placeholder names like "Your Name", "Patient", etc.
 
-User: "Tell me about Einstein"
-TOOL: get_wikipedia_info
-ARGS: Albert Einstein
+For symptoms, use quick_prescription for: cold, flu, headache, fever, cough, allergies, back pain, stomach pain
+Always remind user to consult real doctor.
 
-User: "How many people are in the world?"
-TOOL: search_web
-ARGS: world population 2025
-
-User: "Calculate 50 times 100"
-TOOL: calculate
-ARGS: 50 * 100
-
-After using a tool, you'll receive the result and can provide a natural response.
-If you don't need a tool, just respond naturally to the user."""
+After tool use, provide natural spoken response that acknowledges the user by name if known."""
     
     def parse_tool_call(self, response: str) -> Optional[tuple]:
         """Parse tool call from LLM response"""
@@ -385,13 +509,11 @@ If you don't need a tool, just respond naturally to the user."""
             lines = response.strip().split('\n')
             tool_name = None
             args = None
-            
             for line in lines:
                 if line.startswith("TOOL:"):
                     tool_name = line.replace("TOOL:", "").strip()
                 elif line.startswith("ARGS:"):
                     args = line.replace("ARGS:", "").strip()
-            
             if tool_name:
                 return (tool_name, args)
         return None
@@ -399,48 +521,71 @@ If you don't need a tool, just respond naturally to the user."""
     def execute_tool(self, tool_name: str, args: str) -> str:
         """Execute a tool with given arguments"""
         if tool_name not in TOOLS_DICT:
-            return f"Error: Tool '{tool_name}' not found"
+            return f"Tool '{tool_name}' not found"
         
         try:
             tool_func = TOOLS_DICT[tool_name]
+            import inspect
+            sig = inspect.signature(tool_func)
+            param_count = len(sig.parameters)
             
-            # Parse arguments
+            # Clean up args - remove surrounding quotes if present
+            args = args.strip()
+            if args.startswith('"') and args.endswith('"'):
+                args = args[1:-1]
+            if args.startswith("'") and args.endswith("'"):
+                args = args[1:-1]
+            
             if not args or args.strip() == "":
                 result = tool_func()
+            elif param_count == 1:
+                result = tool_func(args.strip())
             else:
-                # Check function signature to see how many arguments it expects
-                import inspect
-                sig = inspect.signature(tool_func)
-                param_count = len(sig.parameters)
-                
-                if param_count == 0:
-                    result = tool_func()
-                elif param_count == 1:
-                    # Single argument - pass the whole string
-                    result = tool_func(args.strip())
-                else:
-                    # Multiple arguments - split by comma
-                    arg_list = [arg.strip() for arg in args.split(',')]
-                    result = tool_func(*arg_list)
+                # Split by comma and clean each argument
+                arg_list = [arg.strip().strip('"').strip("'") for arg in args.split(',')]
+                result = tool_func(*arg_list)
             
             return result
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return f"Error executing tool: {str(e)}"
+            return f"Tool error: {str(e)}"
+    
+    def extract_patient_name(self, conversation: ConversationManager) -> Optional[str]:
+        """Extract patient name from conversation history"""
+        for msg in conversation.messages:
+            if msg["role"] == "user":
+                text = msg["content"].lower()
+                # Pattern: "my name is X" or "I'm X" or "I am X"
+                if "my name is" in text:
+                    parts = text.split("my name is")
+                    if len(parts) > 1:
+                        name = parts[1].strip().split()[0]
+                        return name.title()
+                elif text.startswith("i'm ") or text.startswith("i am "):
+                    words = text.replace("i'm ", "").replace("i am ", "").strip().split()
+                    if words and len(words[0]) > 1:
+                        return words[0].title()
+        return None
     
     def process_query(self, user_query: str, conversation: ConversationManager) -> tuple:
-        """Process user query"""
-        print("🤖 Processing query...")
+        """Process user query and generate response"""
+        print("🤖 Processing...")
+        
+        # Check if this is a medical request and we need a name
+        medical_keywords = ['headache', 'pain', 'sick', 'ill', 'fever', 'cough', 'cold', 'flu', 
+                           'prescription', 'medicine', 'hurt', 'sore', 'allerg']
+        
+        if any(keyword in user_query.lower() for keyword in medical_keywords):
+            patient_name = self.extract_patient_name(conversation)
+            if patient_name:
+                # Add name context to help the AI
+                user_query = f"[Patient name from history: {patient_name}] {user_query}"
         
         try:
-            # Add user message
             conversation.add_message("user", user_query)
-            
-            # Prepare messages
             messages = [{"role": "system", "content": self.system_prompt}] + conversation.messages
             
-            # Get LLM response
             response = self.client.chat.completions.create(
                 model=Config.LLM_MODEL,
                 messages=messages,
@@ -451,23 +596,18 @@ If you don't need a tool, just respond naturally to the user."""
             ai_response = response.choices[0].message.content
             tools_used = []
             
-            # Check if LLM wants to use a tool
             tool_call = self.parse_tool_call(ai_response)
             
             if tool_call:
                 tool_name, args = tool_call
-                print(f"🔧 Using tool: {tool_name}({args})")
+                print(f"🔧 Using: {tool_name}({args})")
                 
-                # Execute tool
                 tool_result = self.execute_tool(tool_name, args)
                 tools_used.append(tool_name)
-                
-                # Track tool call
                 conversation.add_tool_call(tool_name, args, tool_result)
                 
-                # Get final response with tool result
                 messages.append({"role": "assistant", "content": ai_response})
-                messages.append({"role": "user", "content": f"Tool result: {tool_result}\n\nPlease provide a natural response to the user based on this result."})
+                messages.append({"role": "user", "content": f"Tool result: {tool_result}\n\nProvide natural response."})
                 
                 final_response = self.client.chat.completions.create(
                     model=Config.LLM_MODEL,
@@ -478,44 +618,35 @@ If you don't need a tool, just respond naturally to the user."""
                 
                 ai_response = final_response.choices[0].message.content
             
-            # Add assistant message
             conversation.add_message("assistant", ai_response)
-            
             return ai_response, tools_used
             
         except Exception as e:
             print(f"❌ Error: {e}")
             import traceback
             traceback.print_exc()
-            return f"I apologize, but I encountered an error: {str(e)}", []
+            return f"Error: {str(e)}", []
 
 # =========================
-# MAIN CONVERSATION LOOP
+# MAIN
 # =========================
 def main():
     print("=" * 60)
-    print("🎙️  AI VOICE AGENT - SIMPLE & WORKING VERSION")
+    print("🎙️  AI VOICE AGENT WITH PRESCRIPTION SYSTEM")
     print("=" * 60)
-    print("🔧 Powered by: Direct OpenAI API + ESPRIT Llama 3.1 70B")
-    print("=" * 60)
-    print("📋 Controls:")
-    print("   - Speak naturally, system detects when you stop")
-    print("   - Agent has tools: search, Wikipedia, save, calculate, etc.")
-    print("   - Press Ctrl+C to end conversation")
+    print("✨ Features: Search, Wikipedia, Calculate, Save, Notes")
+    print("💊 Medical: Create prescriptions for common conditions")
     print("=" * 60)
     print()
     
-    # Check API key
     if not Config.ESPRIT_API_KEY:
-        print("❌ ERROR: ESPRIT_API_KEY not found in .env file!")
-        print("Please create a .env file with your API key.")
+        print("❌ ESPRIT_API_KEY not found in .env!")
         return
     
-    # Initialize components
-    print("🔄 Loading Whisper model...")
+    print("🔄 Loading Whisper...")
     whisper_model = whisper.load_model(Config.WHISPER_MODEL)
     
-    print("🔄 Initializing AI agent...")
+    print("🔄 Initializing agent...")
     agent = SimpleVoiceAgent()
     
     vad = VoiceActivityDetector(
@@ -526,52 +657,46 @@ def main():
     
     conversation = ConversationManager(max_history=10)
     
-    print("✅ System ready!\n")
-    print("💡 Try asking:")
-    print("   - 'Search for the latest news about AI'")
-    print("   - 'Tell me about quantum computing'")
+    print("✅ Ready!\n")
+    print("💡 Try:")
+    print("   - 'My name is [Your Name] and I have a headache'")
     print("   - 'What time is it?'")
-    print("   - 'Calculate 156 times 23 plus 789'")
-    print("   - 'Save this conversation summary'\n")
+    print("   - 'Search for AI news'")
+    print("   - 'Create prescription for John with cold'\n")
     
-    turn_number = 1
+    turn = 1
     try:
         while True:
             print(f"\n{'─' * 60}")
-            print(f"Turn {turn_number}")
+            print(f"Turn {turn}")
             print(f"{'─' * 60}")
             
-            # Record audio
             audio_data = vad.record_until_silence(max_duration=Config.MAX_RECORDING_TIME)
             
             if audio_data is None or len(audio_data) < Config.SAMPLE_RATE * 0.5:
-                print("⚠️ No speech detected, trying again...")
+                print("⚠️ No speech, trying again...")
                 continue
             
-            # Transcribe
             audio_file = save_audio(audio_data, sample_rate=Config.SAMPLE_RATE)
             user_text = transcribe_audio(audio_file, whisper_model)
             
             if not user_text or len(user_text.strip()) < 2:
-                print("⚠️ Could not understand, please try again...")
+                print("⚠️ Could not understand...")
                 continue
             
             print(f"\n👤 You: {user_text}")
             
-            # Get AI response
             ai_response, tools_used = agent.process_query(user_text, conversation)
-            
-            # Add to conversation history
             conversation.add_interaction(user_text, ai_response, tools_used)
             
             print(f"\n🤖 AI: {ai_response}")
             if tools_used:
-                print(f"🔧 Tools used: {', '.join(tools_used)}")
+                print(f"🔧 Tools: {', '.join(tools_used)}")
             
-            turn_number += 1
+            turn += 1
             
     except KeyboardInterrupt:
-        print("\n\n👋 Ending conversation...")
+        print("\n\n👋 Ending...")
         conversation.save_session()
         print("Goodbye!")
     except Exception as e:
