@@ -1,27 +1,24 @@
-# Core Dependencies
+# Core
 numpy
 scipy
 
-# Audio Processing
+# Audio I/O and STT
 sounddevice
 openai-whisper
 
-# OpenAI Client
+# OpenAI-compatible client + HTTP
 openai
 httpx
 
-# LangChain Framework
-langchain
-langchain-core
-langchain-openai
-langchain-community
-
-# Environment Variables
+# Env variables
 python-dotenv
 
-# Tool Dependencies
+# Utilities and external tools
 requests
 wikipedia
 
-# Optional: For better audio quality
-# pyaudio>=0.2.13  # Alternative to sounddevice
+# PDF generation for prescriptions
+reportlab
+
+# (Optional) If you hit PortAudio issues on some systems, consider:
+# pyaudio>=0.2.13
