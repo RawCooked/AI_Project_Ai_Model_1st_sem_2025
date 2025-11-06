@@ -6,16 +6,19 @@ scipy
 sounddevice
 openai-whisper
 
-# OpenAI-compatible client + HTTP
-openai
+# LangChain stack
+langchain
+langchain-core
+langchain-community
+
+# HTTP and utilities
 httpx
+requests
+wikipedia
+bs4
 
 # Env variables
 python-dotenv
-
-# Utilities and external tools
-requests
-wikipedia
 
 # PDF generation for prescriptions
 reportlab
