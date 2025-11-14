@@ -3,6 +3,7 @@ import json
 import queue
 from datetime import datetime
 from typing import Optional
+from medication_rag import MedicationRAG
 
 import numpy as np
 import sounddevice as sd
@@ -37,7 +38,8 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "tiny")
 ESPRIT_API_KEY = os.getenv("ESPRIT_API_KEY")
 ESPRIT_BASE_URL = os.getenv("ESPRIT_BASE_URL", "https://tokenfactory.esprit.tn/api/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "hosted_vllm/Llama-3.1-70B-Instruct")
-
+# Initialize RAG globally       
+medication_rag = None
 # =========================
 # VOICE CAPTURE (functional)
 # =========================
@@ -292,6 +294,58 @@ def tool_create_prescription(patient_info: str, medications: str, diagnosis: str
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
+# Add this near your other tool functions
+
+def tool_search_medication(query: str) -> str:
+    """Search medication database using RAG."""
+    try:
+        # Initialize RAG if not already done (you'll do this once at startup)
+        results = medication_rag.search(query, k=3)
+        
+        if not results:
+            return "No medications found matching your query."
+        
+        response = f"Found {len(results)} relevant medication(s):\n\n"
+        
+        for i, result in enumerate(results, 1):
+            response += f"{i}. {result['metadata']['name']}\n"
+            response += f"   Active Ingredient: {result['metadata']['dci']}\n"
+            response += f"   Price: {result['metadata']['price']} TND\n"
+            response += f"   Code: {result['metadata']['code']}\n\n"
+        
+        return response
+    except Exception as e:
+        return f"Error searching medications: {str(e)}"
+
+
+def tool_get_medication_price(medication_name: str) -> str:
+    """Get price for a specific medication."""
+    try:
+        med = medication_rag.get_medication_by_name(medication_name)
+        
+        if med:
+            return f"💊 {med['name']}\n💰 Public Price: {med['price']} TND\n📋 Reference Price: {med['reference_price']} TND\n🧪 Active Ingredient: {med['dci']}"
+        else:
+            return f"Medication '{medication_name}' not found in database."
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def tool_find_by_ingredient(ingredient: str) -> str:
+    """Find all medications containing a specific active ingredient."""
+    try:
+        meds = medication_rag.get_medications_by_ingredient(ingredient)
+        
+        if not meds:
+            return f"No medications found with ingredient: {ingredient}"
+        
+        response = f"Found {len(meds)} medication(s) with {ingredient}:\n\n"
+        for med in meds:
+            response += f"• {med['name']} - {med['price']} TND\n"
+        
+        return response
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 def tool_quick_prescription(args: str) -> str:
     try:
@@ -335,6 +389,21 @@ TOOLS = [
     Tool.from_function(func=tool_save, name="save_to_file", description="Save content to a timestamped text file. Input: content string."),
     Tool.from_function(func=tool_create_prescription, name="create_prescription", description="Create a prescription PDF. Input: patient_info, medications, [diagnosis], [notes]"),
     Tool.from_function(func=tool_quick_prescription, name="quick_prescription", description="Quick prescription for common conditions. Input: 'Patient Name, condition'"),
+    Tool.from_function(
+        func=tool_search_medication,
+        name="search_medication",
+        description="Search medication database for drugs, prices, or ingredients. Input: search query string."
+    ),
+    Tool.from_function(
+        func=tool_get_medication_price,
+        name="get_medication_price",
+        description="Get price and details for a specific medication by name. Input: medication name."
+    ),
+    Tool.from_function(
+        func=tool_find_by_ingredient,
+        name="find_by_ingredient",
+        description="Find medications by active ingredient (DCI). Input: ingredient name."
+    ),
 ]
 
 # =========================
@@ -356,13 +425,16 @@ def build_llm() -> ChatOpenAI:
 
 
 SYSTEM_PROMPT = (
-    "You are a helpful AI voice assistant with access to tools. Keep responses natural, "
-    "conversational, and concise (2-3 sentences unless more detail is requested).\n\n"
+    "You are a helpful AI medical voice assistant with access to a medication database and various tools. "
+    "Keep responses natural, conversational, and concise (2-3 sentences unless more detail is requested).\n\n"
     "Tool usage policy:\n"
-    "- Prefer using tools when needed.\n"
-    "- For medical intents, ensure the patient's real name is known. If not, ask for it first.\n"
-    "- After using a tool, summarize results naturally.\n"
-    "Safety: Medical outputs are informational only; advise consulting a licensed professional."
+    "- Use 'search_medication' for general medication queries\n"
+    "- Use 'get_medication_price' for specific price inquiries\n"
+    "- Use 'find_by_ingredient' to find medications by active ingredient\n"
+    "- For prescription creation, ensure patient's real name is known\n"
+    "- After using a tool, summarize results naturally\n\n"
+    "Safety: All medical outputs are informational only. Always advise consulting a licensed healthcare professional."
+
 )
 
 
@@ -421,9 +493,17 @@ def run_agent(user_input: str, llm: ChatOpenAI) -> str:
 # =========================
 
 def main():
+    global medication_rag
+    
     print("=" * 60)
-    print("🎙️  AI VOICE AGENT WITH PRESCRIPTION SYSTEM (LangChain)")
+    print("🎙️  AI VOICE AGENT WITH MEDICATION RAG")
     print("=" * 60)
+    
+    # Initialize RAG system
+    print("🔄 Initializing medication database...")
+    medication_rag = MedicationRAG("medications.csv")
+    medication_rag.setup()
+    
     print("✨ Tools: Search, Wikipedia, Calculate, Save, Notes, Prescriptions")
     print("=" * 60)
     if not ESPRIT_API_KEY:

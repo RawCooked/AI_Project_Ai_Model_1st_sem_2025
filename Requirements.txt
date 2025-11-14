@@ -25,3 +25,6 @@ reportlab
 
 # (Optional) If you hit PortAudio issues on some systems, consider:
 # pyaudio>=0.2.13
+chromadb 
+sentence-transformers
+
